@@ -53,6 +53,10 @@ nano .env      # 填 ZEROSSL_API_KEY
 不需要的站点直接删掉对应 `.conf` 文件；要加站点就复制一份改端口和上游。
 注意 `nginx/http.d/default.conf` 是刻意留空的 —— 80 端口必须留给 issuer。
 
+站点均为纯 HTTPS 端口，已配置 `error_page 497` 自动跳转：
+误用 `http://你的IP:10086` 访问会 302 到 `https://你的IP:10086`，
+不会再出现 nginx 的 `400 The plain HTTP request was sent to HTTPS port`。
+
 **5. 确认 80 端口空闲**
 
 ```bash
