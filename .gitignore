@@ -1,0 +1,16 @@
+# 含 ZeroSSL API key，切勿提交
+.env
+
+# 运行时生成的证书与私钥
+nginx/cert/*.crt
+nginx/cert/*.key
+nginx/cert/.ip
+nginx/cert/.reload
+
+# 日志与状态
+nginx/log/*
+!nginx/log/.gitkeep
+issuer/state/*
+!issuer/state/.gitkeep
+__pycache__/
+*.pyc

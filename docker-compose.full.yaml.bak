@@ -1,0 +1,57 @@
+---
+services:
+  nginx:
+    image: nginx:stable-alpine
+    container_name: nginx
+    restart: always
+    network_mode: host
+    environment:
+      - TZ=Asia/Shanghai
+    volumes:
+      - "./nginx/nginx.conf:/etc/nginx/nginx.conf"
+      - "./nginx/http.d:/etc/nginx/http.d"
+      - "./nginx/stream.d:/etc/nginx/stream.d"
+      - "./nginx/exconf:/etc/nginx/exconf"
+      - "./nginx/log:/var/log/nginx"
+      - "./nginx/cert:/etc/nginx/cert"
+      - "./www:/var/www/"
+
+  php:
+    build: ./php/build
+    container_name: php
+    restart: always
+    network_mode: host
+    environment:
+      - TZ=Asia/Shanghai
+    volumes:
+      - "./php/php.ini:/usr/local/etc/php/conf.d/zzz-php.ini"
+      - "./php/php-fpm.d:/usr/local/etc/php-fpm.d"
+      - "./php/log:/var/log/supervisor"
+      - "./supervisor.d:/etc/supervisor.d"
+      - './crontabs.conf:/etc/crontabs/root'
+      - "./www:/var/www/"
+
+  mariadb:
+    image: mariadb:lts
+    container_name: mariadb
+    restart: always
+    network_mode: host
+    environment:
+      - TZ=Asia/Shanghai
+      - MARIADB_ROOT_PASSWORD=password
+    volumes:
+      - "./mariadb/data:/var/lib/mysql"
+      - "./mariadb/conf.d:/etc/mysql/mariadb.conf.d"
+      - "/gd/db_backup:/backup"
+
+  redis:
+    image: redis
+    container_name: redis
+    restart: always
+    network_mode: host
+    environment:
+      - TZ=Asia/Shanghai
+    volumes:
+      - "./redis/redis.conf:/etc/redis/redis.conf"
+      - "./redis/data:/data"
+    command: redis-server /etc/redis/redis.conf

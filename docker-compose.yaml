@@ -1,0 +1,51 @@
+---
+services:
+  issuer:
+    build: ./issuer
+    image: zerossl-ip-issuer:local
+    container_name: issuer
+    restart: always
+    network_mode: host
+    environment:
+      - TZ=Asia/Shanghai
+      - ZEROSSL_API_KEY=${ZEROSSL_API_KEY:?请在 .env 中设置 ZEROSSL_API_KEY}
+      - CERT_IP=${CERT_IP:-}
+      # 输出 ip.crt / ip.key，与 nginx 配置中的路径一致
+      - CERT_NAME=ip
+      - CERT_VALIDITY_DAYS=${CERT_VALIDITY_DAYS:-90}
+      - RENEW_BEFORE_DAYS=${RENEW_BEFORE_DAYS:-30}
+      - CHECK_INTERVAL_HOURS=${CHECK_INTERVAL_HOURS:-12}
+      - FORCE_ISSUE=${FORCE_ISSUE:-0}
+      # standalone：issuer 自己在 80 上应答验证请求。
+      # 不依赖 nginx，避免「nginx 缺证书起不来 → 无法验证 → 永远拿不到证书」的死锁。
+      - VERIFY_MODE=standalone
+      - VERIFY_PORT=80
+      # 证书换新后直接通知 nginx 容器重载
+      - NGINX_CONTAINER=nginx
+    volumes:
+      - "./nginx/cert:/certs"
+      - "./issuer/state:/state"
+      - "/var/run/docker.sock:/var/run/docker.sock"
+
+  nginx:
+    image: nginx:stable-alpine
+    container_name: nginx
+    restart: always
+    network_mode: host
+    depends_on:
+      - issuer
+    entrypoint: ["/bin/sh", "/wait-cert.sh"]
+    environment:
+      - TZ=Asia/Shanghai
+    volumes:
+      - "./nginx/wait-cert.sh:/wait-cert.sh:ro"
+      - "./nginx/nginx.conf:/etc/nginx/nginx.conf"
+      - "./nginx/http.d:/etc/nginx/http.d"
+      - "./nginx/stream.d:/etc/nginx/stream.d"
+      - "./nginx/exconf:/etc/nginx/exconf"
+      - "./nginx/log:/var/log/nginx"
+      - "./nginx/cert:/etc/nginx/cert"
+      - "./www:/var/www/"
+
+# 纯反代场景下不需要 php / mariadb / redis，已移除。
+# 原始定义保留在 docker-compose.full.yaml.bak，需要时可取回。
