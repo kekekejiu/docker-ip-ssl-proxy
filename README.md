@@ -50,6 +50,19 @@ nano .env      # 填 ZEROSSL_API_KEY
 | `nginx/http.d/ip.conf` | 10086 | `https://example.com` |
 | `nginx/http.d/hh.conf` | 11186 | `https://api.example.com` |
 
+每个站点要改三处：
+
+```nginx
+listen 10086 ssl default_server;          # 对外端口
+set $upstream "https://example.com";      # 反代目标
+set $upstream_host "example.com";         # 传给上游的 Host（不带协议）
+```
+
+`$upstream_host` 必须与上游域名一致。它同时用于 `proxy_set_header Host` 和
+`proxy_ssl_name`（SNI）—— 反代到域名时若传成本机 IP，上游的路由匹配、
+cookie domain、重定向地址都会出错，共享 IP 的主机甚至会握手失败。
+反代到 IP:端口 时，这两个值填该 IP 即可。
+
 不需要的站点直接删掉对应 `.conf` 文件；要加站点就复制一份改端口和上游。
 注意 `nginx/http.d/default.conf` 是刻意留空的 —— 80 端口必须留给 issuer。
 
