@@ -23,10 +23,15 @@
 
 > 分析中心若迁移或独立部署，改 `.env` 里的 `GATE_REPORT_URL` / `GATE_REPORT_TOKEN` 即可。
 
-**给某个站点关闭闸门**（如纯 API 站）：删掉该站 `.conf` 里的
-`include .../human-gate.inc;` 与 `location /` 内的 `auth_request /__gate/check;` 两行即可。
+**整台机器关闭滑块**（如本机专门反代 API，不面向浏览器用户）：
+`.env` 里设 `GATE_ENABLE=off`，`docker compose up -d` 即可。全站放行、不弹滑块，
+**无需改任何 nginx 配置**；且仍会采集并上报访客数据，中心照样能看到分析。
 
-**放行特定路径**（如 API / WebDAV / 直链下载）：给这些路径单独写 `location`，
+**只给某个站点关闭闸门**（部分站要、部分不要）：删掉该站 `.conf` 里的
+`include .../human-gate.inc;` 与 `location /` 内的 `auth_request /__gate/check;` 两行即可。
+（API 示例站 `hh.conf` 本就没加闸门，可直接参考。）
+
+**放行特定路径**（如网页站里的 API / WebDAV / 直链下载）：给这些路径单独写 `location`，
 不加 `auth_request` 即自动放行。
 
 > human-gate 与 nginx 同为 host 网络，闸门经 `127.0.0.1:9200` 通信。
