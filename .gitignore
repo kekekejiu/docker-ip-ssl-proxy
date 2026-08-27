@@ -14,3 +14,7 @@ issuer/state/*
 !issuer/state/.gitkeep
 __pycache__/
 *.pyc
+
+# human-gate 运行时数据（密钥/本地库，切勿提交）
+human-gate/data/*
+!human-gate/data/.gitkeep

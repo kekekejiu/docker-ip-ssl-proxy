@@ -4,8 +4,35 @@
 
 - `issuer` — 启动时自动探测本机公网 IPv4，通过 ZeroSSL REST API 申请 90 天 IP 证书，常驻自动续期
 - `nginx` — TLS 终结 + 反向代理，可跑在任意端口（如 `https://1.2.3.4:10086`）
+- `human-gate` — 人机验证闸门 + 访客数据上报（默认对反代站点开启，见下方「人机验证闸门」）
 
 证书固定输出为 `nginx/cert/ip.crt` 和 `ip.key`。
+
+## 人机验证闸门（human-gate）
+
+本项目已内置人机验证闸门：**反代站点默认开启**，访客首次访问网页需通过滑块验证，
+爬虫/自动化请求被挡在门外；同时把访客数据（IP、UA、运营商、地区、风险等级）上报到你的分析中心。
+
+一次部署即接入，无需手动配置每个站点：
+
+1. 在 `.env` 填三项（中心地址与密钥）：
+   ```
+   GATE_REPORT_URL=https://中心IP:9443/__gate/ingest
+   GATE_REPORT_TOKEN=与中心一致的密钥
+   GATE_REPORT_INSECURE=1
+   ```
+2. `docker compose up -d` —— 站点模板 `ip.conf` 已默认 `include exconf/human-gate.inc`
+   并在 `location /` 加了 `auth_request`，直接生效。
+
+**给某个站点关闭闸门**（如纯 API 站）：删掉该站 `.conf` 里的
+`include .../human-gate.inc;` 与 `location /` 内的 `auth_request /__gate/check;` 两行即可。
+
+**放行特定路径**（如 API / WebDAV / 直链下载）：给这些路径单独写 `location`，
+不加 `auth_request` 即自动放行。
+
+> human-gate 与 nginx 同为 host 网络，闸门经 `127.0.0.1:9200` 通信。
+> 分析中心（含面板、IP 画像库）单独部署，本项目内的 human-gate 只做本地闸门 + 上报。
+> `human-gate/data/` 下会生成 `secret.key`（HMAC 密钥），已在 `.gitignore` 排除。
 
 ## 为什么不用 acme.sh
 

@@ -27,6 +27,28 @@ services:
       - "./issuer/state:/state"
       - "/var/run/docker.sock:/var/run/docker.sock"
 
+  # human-gate：人机验证闸门 + 访客数据上报中心。
+  # host 网络，监听 127.0.0.1:9200，供 nginx 的 auth_request 调用。
+  human-gate:
+    image: alpine:3.20
+    container_name: human-gate
+    restart: always
+    network_mode: host
+    command: ["/human-gate"]
+    environment:
+      - TZ=Asia/Shanghai
+      - GATE_LISTEN=127.0.0.1:9200
+      - GATE_COOKIE=hg_pass
+      - GATE_SECRET_FILE=/data/secret.key
+      - GATE_PASS_TTL_HOURS=${GATE_PASS_TTL_HOURS:-12}
+      # 上报到中心（在 .env 填写）
+      - GATE_REPORT_URL=${GATE_REPORT_URL:?请在 .env 设置中心 ingest 地址}
+      - GATE_REPORT_TOKEN=${GATE_REPORT_TOKEN:?请在 .env 设置上报密钥}
+      - GATE_REPORT_INSECURE=${GATE_REPORT_INSECURE:-1}
+    volumes:
+      - "./human-gate/human-gate:/human-gate:ro"
+      - "./human-gate/data:/data"
+
   nginx:
     image: nginx:stable-alpine
     container_name: nginx
@@ -34,6 +56,7 @@ services:
     network_mode: host
     depends_on:
       - issuer
+      - human-gate
     entrypoint: ["/bin/sh", "/wait-cert.sh"]
     environment:
       - TZ=Asia/Shanghai
