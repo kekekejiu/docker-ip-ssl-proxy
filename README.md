@@ -15,14 +15,13 @@
 
 一次部署即接入，无需手动配置每个站点：
 
-1. 在 `.env` 填三项（中心地址与密钥）：
-   ```
-   GATE_REPORT_URL=https://中心IP:9443/__gate/ingest
-   GATE_REPORT_TOKEN=与中心一致的密钥
-   GATE_REPORT_INSECURE=1
-   ```
-2. `docker compose up -d` —— 站点模板 `ip.conf` 已默认 `include exconf/human-gate.inc`
-   并在 `location /` 加了 `auth_request`，直接生效。
+- `.env` 里的上报配置（`GATE_REPORT_URL` / `GATE_REPORT_TOKEN`）**已填好默认中心**，
+  通常无需改动。部署时一般**只需填 `ZEROSSL_API_KEY`**。
+- `docker compose up -d` 会一并启动 issuer、human-gate、nginx 三个服务；
+  站点模板 `ip.conf` 已默认 `include exconf/human-gate.inc` 并在 `location /` 加了
+  `auth_request`，直接生效。
+
+> 分析中心若迁移或独立部署，改 `.env` 里的 `GATE_REPORT_URL` / `GATE_REPORT_TOKEN` 即可。
 
 **给某个站点关闭闸门**（如纯 API 站）：删掉该站 `.conf` 里的
 `include .../human-gate.inc;` 与 `location /` 内的 `auth_request /__gate/check;` 两行即可。
