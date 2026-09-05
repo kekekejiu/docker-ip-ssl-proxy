@@ -21,7 +21,16 @@ cd "$ROOT" || { log "项目目录不存在: $ROOT"; exit 1; }
 [ -d .git ] || { log "不是 git 仓库: $ROOT"; exit 1; }
 mkdir -p "$BACKUP_ROOT"
 
-git fetch -q origin "$BRANCH" || { log "git fetch 失败，保留当前版本"; exit 1; }
+fetch_ok=0
+for attempt in 1 2 3; do
+  if git fetch -q origin "$BRANCH"; then fetch_ok=1; break; fi
+  log "git fetch 第${attempt}次失败，稍后重试"
+  sleep $((attempt * 5))
+done
+if [ "$fetch_ok" -ne 1 ]; then
+  log "GitHub暂时不可达，跳过本轮并保留当前版本"
+  exit 0
+fi
 TARGET=$(git rev-parse "origin/$BRANCH")
 CURRENT=$(cat "$STATE_FILE" 2>/dev/null || git rev-parse HEAD)
 [ "$CURRENT" = "$TARGET" ] && { log "已是最新版 ${TARGET:0:7}"; exit 0; }
