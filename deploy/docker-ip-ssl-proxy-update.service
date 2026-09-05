@@ -1,0 +1,11 @@
+[Unit]
+Description=Controlled update for docker-ip-ssl-proxy
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+EnvironmentFile=-/etc/default/docker-ip-ssl-proxy-updater
+ExecStart=/opt/lnmpr/deploy/auto-update.sh
+Nice=10
+IOSchedulingClass=idle

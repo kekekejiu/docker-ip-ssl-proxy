@@ -8,6 +8,20 @@
 
 证书固定输出为 `nginx/cert/ip.crt` 和 `ip.key`。
 
+## 受控自动更新
+
+首次部署或迁移后可安装 systemd 定时更新任务，每10分钟检查 GitHub 新版本：
+
+```bash
+# 普通网页反代节点：更新issuer/nginx/human-gate
+bash deploy/install-auto-update.sh full
+
+# 后端API节点：只更新ZeroSSL签发器，绝不安装/启动human-gate
+bash deploy/install-auto-update.sh cert-only
+```
+
+更新器会保留本机 `.env`、`nginx/http.d/`、`nginx/stream.d/`、证书、日志、issuer状态和human-gate密钥。新版会先在临时目录执行 `docker compose config`，部署后检查容器、nginx配置和human-gate健康状态；失败自动回滚。`cert-only` 模式不修改compose/nginx，也会拒绝human-gate容器存在。
+
 ## 人机验证闸门（human-gate）
 
 本项目已内置人机验证闸门：**反代站点默认开启**，访客首次访问网页需通过滑块验证，

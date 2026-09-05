@@ -43,6 +43,13 @@ services:
       - GATE_PASS_TTL_HOURS=${GATE_PASS_TTL_HOURS:-12}
       # 滑块总开关：on=开启验证(默认)，off=纯反代不弹滑块(如反代API)。仍会采集访客数据
       - GATE_ENABLE=${GATE_ENABLE:-on}
+      # 验证页客服：静态链接为兜底，外链脚本支持SaleSmartly等客服平台
+      - GATE_SUPPORT_ENABLE=${GATE_SUPPORT_ENABLE:-}
+      - GATE_SUPPORT_TEXT=${GATE_SUPPORT_TEXT:-验证遇到问题？联系客服}
+      - GATE_SUPPORT_URL=${GATE_SUPPORT_URL:-}
+      - GATE_SUPPORT_SCRIPT_URL=${GATE_SUPPORT_SCRIPT_URL:-}
+      - GATE_SUPPORT_HTML_B64=${GATE_SUPPORT_HTML_B64:-}
+      - GATE_SUPPORT_HTML_FILE=${GATE_SUPPORT_HTML_FILE:-/data/support.html}
       # 上报到中心（在 .env 填写）
       - GATE_REPORT_URL=${GATE_REPORT_URL:?请在 .env 设置中心 ingest 地址}
       - GATE_REPORT_TOKEN=${GATE_REPORT_TOKEN:?请在 .env 设置上报密钥}
