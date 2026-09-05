@@ -49,7 +49,7 @@ services:
       - GATE_SUPPORT_URL=${GATE_SUPPORT_URL:-}
       - GATE_SUPPORT_SCRIPT_URL=${GATE_SUPPORT_SCRIPT_URL:-}
       - GATE_SUPPORT_HTML_B64=${GATE_SUPPORT_HTML_B64:-}
-      - GATE_SUPPORT_HTML_FILE=${GATE_SUPPORT_HTML_FILE:-/data/support.html}
+      - GATE_SUPPORT_HTML_FILE=${GATE_SUPPORT_HTML_FILE:-}
       # 上报到中心（在 .env 填写）
       - GATE_REPORT_URL=${GATE_REPORT_URL:?请在 .env 设置中心 ingest 地址}
       - GATE_REPORT_TOKEN=${GATE_REPORT_TOKEN:?请在 .env 设置上报密钥}

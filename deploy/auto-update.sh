@@ -2,7 +2,7 @@
 # docker-ip-ssl-proxy 受控自动更新器
 # UPDATE_SCOPE=full: 更新完整程序并重建 issuer/nginx/human-gate
 # UPDATE_SCOPE=cert-only: 仅更新 issuer 与更新器，不安装/启动 human-gate，不修改 nginx 配置
-set -uo pipefail
+set -Eeuo pipefail
 
 ROOT="${PROJECT_DIR:-/opt/lnmpr}"
 BRANCH="${UPDATE_BRANCH:-main}"
@@ -77,7 +77,7 @@ if [ "$SCOPE" = full ]; then
   RUNNING=$(docker compose ps --status running --services)
   if ! grep -qx nginx <<<"$RUNNING" || ! grep -qx issuer <<<"$RUNNING" || ! grep -qx human-gate <<<"$RUNNING" || \
      ! docker exec nginx nginx -t >/dev/null 2>&1 || \
-     ! wget -qO- --timeout=5 http://127.0.0.1:9200/__gate/healthz | grep -q '^ok$'; then
+     ! docker exec nginx wget -qO- --timeout=5 http://127.0.0.1:9200/__gate/healthz | grep -q '^ok$'; then
     rollback; exit 1
   fi
 else
