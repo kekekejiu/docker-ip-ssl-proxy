@@ -7,6 +7,7 @@
 
 import datetime
 import os
+import re
 import sys
 import time
 
@@ -175,6 +176,63 @@ def write_atomic(path, content, mode=0o644):
     os.replace(tmp, path)
 
 
+_PEM_CERT_RE = re.compile(
+    r"-----BEGIN CERTIFICATE-----\s+.*?\s+-----END CERTIFICATE-----",
+    re.DOTALL,
+)
+
+
+def certificate_blocks(pem):
+    """从 ZeroSSL 返回文本中提取规范化 PEM 证书块。"""
+    return [block.strip() + "\n" for block in _PEM_CERT_RE.findall(pem or "")]
+
+
+def build_fullchain(certificate_pem, ca_bundle_pem):
+    """按 nginx 要求构建 fullchain：站点证书在前，CA 链在后，并去重。"""
+    leaves = certificate_blocks(certificate_pem)
+    chains = certificate_blocks(ca_bundle_pem)
+    if not leaves:
+        raise zerossl.ZeroSSLError("certificate.crt 不含合法 PEM 证书")
+    if not chains:
+        raise zerossl.ZeroSSLError("ca_bundle.crt 不含合法 PEM 中间证书链")
+    ordered = []
+    seen = set()
+    for block in leaves + chains:
+        fingerprint = block.replace("\r", "").strip()
+        if fingerprint not in seen:
+            ordered.append(block)
+            seen.add(fingerprint)
+    return "".join(ordered), "".join(chains)
+
+
+def validate_certificate_pair(fullchain, key_path):
+    """写入前校验 fullchain 可解析，并确认站点证书与私钥公钥一致。"""
+    cert_tmp = key_path + ".fullchain.check"
+    pub_cert = key_path + ".cert.pub"
+    pub_key = key_path + ".key.pub"
+    try:
+        write_atomic(cert_tmp, fullchain)
+        subprocess.run(["openssl", "x509", "-in", cert_tmp, "-noout", "-subject", "-issuer"],
+                       check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        with open(pub_cert, "wb") as out:
+            subprocess.run(["openssl", "x509", "-in", cert_tmp, "-pubkey", "-noout"],
+                           check=True, stdout=out, stderr=subprocess.PIPE)
+        with open(pub_key, "wb") as out:
+            subprocess.run(["openssl", "pkey", "-in", key_path, "-pubout"],
+                           check=True, stdout=out, stderr=subprocess.PIPE)
+        with open(pub_cert, "rb") as a, open(pub_key, "rb") as b:
+            if a.read() != b.read():
+                raise zerossl.ZeroSSLError("certificate.crt 与 private.key 不匹配")
+    except subprocess.CalledProcessError as exc:
+        raise zerossl.ZeroSSLError("证书或私钥校验失败: %s" % exc.stderr.decode("utf-8", "replace")) from exc
+    finally:
+        for path in (cert_tmp, pub_cert, pub_key):
+            try:
+                os.remove(path)
+            except OSError:
+                pass
+
+
 def reload_nginx():
     """证书换新后让 nginx 重载。
 
@@ -295,13 +353,16 @@ def issue_once(cfg):
         final = wait_until_issued(api_key, cert_id)
     log("  验证资源已释放")
 
-    log("6/6 写入 %s" % CERT_DIR)
+    log("6/6 合并 certificate.crt + ca_bundle.crt 并写入 %s" % CERT_DIR)
     crt, chain = zerossl.download_certificate(api_key, cert_id)
-    write_atomic(paths["crt"], crt.rstrip() + "\n" + chain.rstrip() + "\n")
-    write_atomic(paths["chain"], chain.rstrip() + "\n")
+    fullchain, normalized_chain = build_fullchain(crt, chain)
+    validate_certificate_pair(fullchain, key_tmp)
+    write_atomic(paths["crt"], fullchain)
+    write_atomic(paths["chain"], normalized_chain)
     os.replace(key_tmp, paths["key"])
     os.chmod(paths["key"], 0o600)
-    for label, p in (("证书", paths["crt"]), ("私钥", paths["key"])):
+    log("  完整链顺序: certificate.crt -> ca_bundle.crt")
+    for label, p in (("完整证书链", paths["crt"]), ("CA链", paths["chain"]), ("私钥", paths["key"])):
         log("  %s -> %s" % (label, p))
 
     reload_nginx()
