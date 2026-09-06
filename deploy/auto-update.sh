@@ -73,7 +73,8 @@ rollback(){
       --exclude 'nginx/cert/' --exclude 'nginx/log/' --exclude 'issuer/state/' --exclude 'human-gate/data/' \
       "$BACKUP/" "$ROOT/"
     [ -f "$BACKUP/.env" ] && cp -a "$BACKUP/.env" "$ROOT/.env"
-    docker compose up -d --build --force-recreate >/dev/null 2>&1 || true
+    docker compose up -d --build >/dev/null 2>&1 || true
+    docker compose up -d --force-recreate human-gate >/dev/null 2>&1 || true
   else
     rm -rf "$ROOT/issuer"; cp -a "$BACKUP/issuer" "$ROOT/issuer"
     docker compose up -d --build issuer >/dev/null 2>&1 || true
@@ -81,7 +82,8 @@ rollback(){
 }
 
 if [ "$SCOPE" = full ]; then
-  docker compose up -d --build --force-recreate || { rollback; exit 1; }
+  docker compose up -d --build || { rollback; exit 1; }
+  docker compose up -d --force-recreate human-gate || { rollback; exit 1; }
   sleep 8
   RUNNING=$(docker compose ps --status running --services)
   if ! grep -qx nginx <<<"$RUNNING" || ! grep -qx issuer <<<"$RUNNING" || ! grep -qx human-gate <<<"$RUNNING" || \
