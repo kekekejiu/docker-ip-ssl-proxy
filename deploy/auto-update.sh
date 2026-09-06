@@ -52,7 +52,7 @@ if [ "$SCOPE" = full ]; then
   git archive HEAD | tar -x -C "$BACKUP"
   cp -a .env "$BACKUP/.env" 2>/dev/null || true
   rsync -a --delete \
-    --exclude '.git/' --exclude '.updates/' --exclude '.env' \
+    --exclude '.git' --exclude '.updates/' --exclude '.env' \
     --exclude 'nginx/http.d/' --exclude 'nginx/stream.d/' \
     --exclude 'nginx/cert/' --exclude 'nginx/log/' \
     --exclude 'issuer/state/' --exclude 'human-gate/data/' \
@@ -73,7 +73,7 @@ rollback(){
       --exclude 'nginx/cert/' --exclude 'nginx/log/' --exclude 'issuer/state/' --exclude 'human-gate/data/' \
       "$BACKUP/" "$ROOT/"
     [ -f "$BACKUP/.env" ] && cp -a "$BACKUP/.env" "$ROOT/.env"
-    docker compose up -d --build >/dev/null 2>&1 || true
+    docker compose up -d --build --force-recreate >/dev/null 2>&1 || true
   else
     rm -rf "$ROOT/issuer"; cp -a "$BACKUP/issuer" "$ROOT/issuer"
     docker compose up -d --build issuer >/dev/null 2>&1 || true
@@ -81,7 +81,7 @@ rollback(){
 }
 
 if [ "$SCOPE" = full ]; then
-  docker compose up -d --build || { rollback; exit 1; }
+  docker compose up -d --build --force-recreate || { rollback; exit 1; }
   sleep 8
   RUNNING=$(docker compose ps --status running --services)
   if ! grep -qx nginx <<<"$RUNNING" || ! grep -qx issuer <<<"$RUNNING" || ! grep -qx human-gate <<<"$RUNNING" || \
