@@ -19,6 +19,10 @@ import zerossl
 
 CERT_DIR = os.environ.get("CERT_DIR", "/certs")
 STATE_DIR = os.environ.get("STATE_DIR", "/state")
+CROSS_SIGN_CERT = os.environ.get(
+    "CROSS_SIGN_CERT",
+    "/app/SectigoPublicServerAuthenticationRootR46_USERTrust.pem",
+)
 
 def log(msg):
     ts = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -187,22 +191,63 @@ def certificate_blocks(pem):
     return [block.strip() + "\n" for block in _PEM_CERT_RE.findall(pem or "")]
 
 
+def load_cross_sign_certificate():
+    """读取内置的 R46 -> USERTrust 交叉签名证书。"""
+    try:
+        with open(CROSS_SIGN_CERT, "r", encoding="utf-8") as fh:
+            blocks = certificate_blocks(fh.read())
+    except OSError as exc:
+        raise zerossl.ZeroSSLError("无法读取 R46 交叉签名证书: %s" % exc) from exc
+    if len(blocks) != 1:
+        raise zerossl.ZeroSSLError("R46 交叉签名证书格式无效")
+    return blocks[0]
+
+
 def build_fullchain(certificate_pem, ca_bundle_pem):
-    """按 nginx 要求构建 fullchain：站点证书在前，CA 链在后，并去重。"""
+    """构建兼容旧客户端的链：叶证书、ZeroSSL CA、R46 交叉证书。"""
     leaves = certificate_blocks(certificate_pem)
     chains = certificate_blocks(ca_bundle_pem)
+    cross_sign = load_cross_sign_certificate()
     if not leaves:
         raise zerossl.ZeroSSLError("certificate.crt 不含合法 PEM 证书")
     if not chains:
         raise zerossl.ZeroSSLError("ca_bundle.crt 不含合法 PEM 中间证书链")
+    chain_ordered = []
+    chain_seen = set()
+    for block in chains + [cross_sign]:
+        fingerprint = block.replace("\r", "").strip()
+        if fingerprint not in chain_seen:
+            chain_ordered.append(block)
+            chain_seen.add(fingerprint)
     ordered = []
     seen = set()
-    for block in leaves + chains:
+    for block in leaves + chain_ordered:
         fingerprint = block.replace("\r", "").strip()
         if fingerprint not in seen:
             ordered.append(block)
             seen.add(fingerprint)
-    return "".join(ordered), "".join(chains)
+    return "".join(ordered), "".join(chain_ordered)
+
+
+def repair_existing_fullchain(paths):
+    """无需重新签发，为已有证书追加缺失的 R46 交叉签名证书。"""
+    if not os.path.exists(paths["crt"]):
+        return False
+    try:
+        with open(paths["crt"], "r", encoding="utf-8") as fh:
+            blocks = certificate_blocks(fh.read())
+    except OSError as exc:
+        raise zerossl.ZeroSSLError("无法读取现有证书链: %s" % exc) from exc
+    if len(blocks) < 2:
+        return False
+    cross_sign = load_cross_sign_certificate()
+    if cross_sign.strip() in {block.strip() for block in blocks}:
+        return False
+    fullchain, normalized_chain = build_fullchain(blocks[0], "".join(blocks[1:]))
+    write_atomic(paths["crt"], fullchain)
+    write_atomic(paths["chain"], normalized_chain)
+    log("已为现有证书补入 R46 -> USERTrust 交叉签名链")
+    return True
 
 
 def validate_certificate_pair(fullchain, key_path):
@@ -353,7 +398,7 @@ def issue_once(cfg):
         final = wait_until_issued(api_key, cert_id)
     log("  验证资源已释放")
 
-    log("6/6 合并 certificate.crt + ca_bundle.crt 并写入 %s" % CERT_DIR)
+    log("6/6 合并叶证书 + CA 链 + R46 交叉签名证书并写入 %s" % CERT_DIR)
     crt, chain = zerossl.download_certificate(api_key, cert_id)
     fullchain, normalized_chain = build_fullchain(crt, chain)
     validate_certificate_pair(fullchain, key_tmp)
@@ -361,7 +406,7 @@ def issue_once(cfg):
     write_atomic(paths["chain"], normalized_chain)
     os.replace(key_tmp, paths["key"])
     os.chmod(paths["key"], 0o600)
-    log("  完整链顺序: certificate.crt -> ca_bundle.crt")
+    log("  完整链顺序: certificate.crt -> ca_bundle.crt -> R46(USERTrust交叉签名)")
     for label, p in (("完整证书链", paths["crt"]), ("CA链", paths["chain"]), ("私钥", paths["key"])):
         log("  %s -> %s" % (label, p))
 
@@ -381,6 +426,8 @@ def main():
     write_atomic(os.path.join(CERT_DIR, ".ip"), cfg["ip"] + "\n")
 
     paths = cert_paths(cfg["ip"])
+    if repair_existing_fullchain(paths):
+        reload_nginx()
     force = os.environ.get("FORCE_ISSUE", "").lower() in ("1", "true", "yes")
 
     while True:

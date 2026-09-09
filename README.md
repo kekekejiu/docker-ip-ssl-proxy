@@ -150,11 +150,14 @@ curl -sS -o /dev/null -w "HTTP %{http_code} / TLS %{ssl_verify_result}\n" https:
 启动 → 探测公网 IPv4 → 生成私钥+CSR(CN=IP, SAN=IP)
      → ZeroSSL 创建证书 → issuer 临时监听 80 提供校验文件
      → 触发 HTTP_CSR_HASH 验证 → 轮询至 issued
+     → 拼接叶证书 + ZeroSSL 中间证书 + R46/USERTrust 交叉签名证书
      → 写入 ip.crt/ip.key → 释放 80 → 通知 nginx 重载
      → 休眠，每 12h 检查一次
 ```
 
 关键设计：**issuer 自己在 80 端口应答验证请求**，不依赖 nginx。
+生成的 `ip.crt` 还会追加 Sectigo 官方 R46 → USERTrust RSA 交叉签名证书，
+兼容尚未内置 R46 根的旧客户端；USERTrust 自签名根由客户端信任库提供，不随服务端发送。
 否则会形成死锁 —— nginx 缺证书起不来，80 无人应答，验证失败，永远拿不到证书。
 nginx 侧则由 `wait-cert.sh` 等证书就绪后再启动，避免崩溃重启循环。
 
@@ -165,6 +168,7 @@ nginx 侧则由 `wait-cert.sh` 等证书就绪后再启动，避免崩溃重启�
 
 issuer 常驻，每 12 小时检查，剩余不足 30 天时自动续期，
 完成后通过 docker socket 通知 nginx 重载。无需人工干预。
+升级到包含兼容链的版本时，issuer 启动后会自动修复已有 `ip.crt`，无需强制重签。
 
 手动强制续期：
 
