@@ -114,6 +114,38 @@ cookie domain、重定向地址都会出错，共享 IP 的主机甚至会握手
 不需要的站点直接删掉对应 `.conf` 文件；要加站点就复制一份改端口和上游。
 注意 `nginx/http.d/default.conf` 是刻意留空的 —— 80 端口必须留给 issuer。
 
+## 访客真实 IP
+
+站点模板已向上游传递：
+
+```nginx
+proxy_set_header X-Real-IP $remote_addr;
+proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+proxy_set_header X-Forwarded-Proto $scheme;
+proxy_set_header X-Forwarded-Host $host;
+```
+
+`nginx.conf` 的 `http{}` 还全局 include 了 `exconf/realip.conf`。本机位于
+CDN 或上层反代之后时，它会用可信代理提交的 `X-Forwarded-For` 还原
+`$remote_addr`，使后端和 human-gate 滑块风控拿到访客真实 IP 而非上一跳代理地址。
+
+出于安全，默认只信任回环与内网网段，**不信任 `0.0.0.0/0`**，否则任何客户端都能
+自带 `X-Forwarded-For` 伪造来源 IP，绕过风控与封禁。位于 Cloudflare 之后时，
+在 `exconf/realip.conf` 里取消这行注释：
+
+```nginx
+include /etc/nginx/exconf/realip-cloudflare.conf;
+```
+
+自建上层反代则把该机出口 IP 或网段加进 `set_real_ip_from`。
+
+自定义站点若新增 `location` 并使用 `proxy_pass`，记得一并加上上面四个头，
+否则该路径的后端会丢失真实 IP。验证方法：
+
+```bash
+curl -sk https://你的IP:10086/  # 后端日志中的客户端 IP 应为你的公网 IP
+```
+
 站点均为纯 HTTPS 端口，已配置 `error_page 497` 自动跳转：
 误用 `http://你的IP:10086` 访问会 302 到 `https://你的IP:10086`，
 不会再出现 nginx 的 `400 The plain HTTP request was sent to HTTPS port`。
