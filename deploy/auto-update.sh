@@ -17,6 +17,36 @@ exec 9>"$LOCK"
 flock -n 9 || { log "已有更新任务在运行，跳过"; exit 0; }
 
 case "$SCOPE" in full|cert-only) ;; *) log "非法 UPDATE_SCOPE=$SCOPE"; exit 2;; esac
+
+# 部分精简系统没有 rsync；此时退回 tar 实现，避免更新静默失败。
+# 用法与本脚本所需的 rsync 子集一致：sync_dir <src>/ <dst>/ [--delete] [--exclude PATH]...
+sync_dir(){
+  local src=$1 dst=$2; shift 2
+  local delete=0; local excludes=(); local tar_excludes=()
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --delete) delete=1; shift;;
+      --exclude) excludes+=("${2%/}"); tar_excludes+=(--exclude="${2%/}"); shift 2;;
+      *) shift;;
+    esac
+  done
+  if command -v rsync >/dev/null 2>&1; then
+    local args=(-a); [ "$delete" -eq 1 ] && args+=(--delete)
+    for e in "${excludes[@]}"; do args+=(--exclude "$e"); done
+    rsync "${args[@]}" "$src" "$dst"
+    return
+  fi
+  mkdir -p "$dst"
+  if [ "$delete" -eq 1 ]; then
+    ( cd "$dst" && for entry in * .[!.]*; do
+        [ -e "$entry" ] || continue
+        local skip=0
+        for e in "${excludes[@]}"; do [ "$entry" = "${e%%/*}" ] && skip=1; done
+        [ "$skip" -eq 1 ] || rm -rf -- "$entry"
+      done )
+  fi
+  ( cd "${src%/}" && tar cf - "${tar_excludes[@]}" . ) | ( cd "$dst" && tar xf - )
+}
 cd "$ROOT" || { log "项目目录不存在: $ROOT"; exit 1; }
 [ -d .git ] || { log "不是 git 仓库: $ROOT"; exit 1; }
 mkdir -p "$BACKUP_ROOT"
@@ -66,27 +96,27 @@ if [ "$SCOPE" = full ]; then
   # 备份程序快照和本机环境；持久化目录始终原地保留。
   git archive HEAD | tar -x -C "$BACKUP"
   cp -a .env "$BACKUP/.env" 2>/dev/null || true
-  rsync -a --delete \
+  sync_dir "$STAGE/" "$ROOT/" --delete \
     --exclude '.git' --exclude '.updates/' --exclude '.env' \
     --exclude 'nginx/http.d/' --exclude 'nginx/stream.d/' \
     --exclude 'nginx/cert/' --exclude 'nginx/log/' \
-    --exclude 'issuer/state/' --exclude 'human-gate/data/' \
-    "$STAGE/" "$ROOT/"
+    --exclude 'issuer/state/' --exclude 'human-gate/data/'
 else
   # API 后端节点：只更新证书签发器和自动更新器，绝不碰 compose/nginx/human-gate。
   cp -a issuer "$BACKUP/issuer"
   [ -d deploy ] && cp -a deploy "$BACKUP/deploy" || true
   mkdir -p "$ROOT/issuer" "$ROOT/deploy"
-  rsync -a --delete --exclude 'state/' "$STAGE/issuer/" "$ROOT/issuer/"
-  rsync -a "$STAGE/deploy/" "$ROOT/deploy/"
+  sync_dir "$STAGE/issuer/" "$ROOT/issuer/" --delete --exclude 'state'
+  sync_dir "$STAGE/deploy/" "$ROOT/deploy/"
 fi
 
 rollback(){
   log "健康检查失败，回滚到 ${CURRENT:0:7}"
   if [ "$SCOPE" = full ]; then
-    rsync -a --delete --exclude '.env' --exclude 'nginx/http.d/' --exclude 'nginx/stream.d/' \
-      --exclude 'nginx/cert/' --exclude 'nginx/log/' --exclude 'issuer/state/' --exclude 'human-gate/data/' \
-      "$BACKUP/" "$ROOT/"
+    sync_dir "$BACKUP/" "$ROOT/" --delete \
+      --exclude '.env' --exclude 'nginx/http.d/' --exclude 'nginx/stream.d/' \
+      --exclude 'nginx/cert/' --exclude 'nginx/log/' \
+      --exclude 'issuer/state/' --exclude 'human-gate/data/'
     [ -f "$BACKUP/.env" ] && cp -a "$BACKUP/.env" "$ROOT/.env"
     docker compose up -d --build >/dev/null 2>&1 || true
     docker compose up -d --force-recreate human-gate >/dev/null 2>&1 || true
