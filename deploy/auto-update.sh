@@ -33,7 +33,22 @@ if [ "$fetch_ok" -ne 1 ]; then
 fi
 TARGET=$(git rev-parse "origin/$BRANCH")
 CURRENT=$(cat "$STATE_FILE" 2>/dev/null || git rev-parse HEAD)
-[ "$CURRENT" = "$TARGET" ] && { log "已是最新版 ${TARGET:0:7}"; exit 0; }
+# 状态文件可能记录了已完成，但实际文件未落地（历史缺陷或人工干预）。
+# 因此除了比对提交号，还要校验受管目录内容确实与目标一致，否则强制重新同步。
+content_matches(){
+  if [ "$SCOPE" = cert-only ]; then
+    git diff --quiet "$TARGET" -- issuer deploy 2>/dev/null
+  else
+    git diff --quiet "$TARGET" -- issuer deploy human-gate docker-compose.yaml nginx/nginx.conf 2>/dev/null
+  fi
+}
+if [ "$CURRENT" = "$TARGET" ]; then
+  if content_matches; then
+    log "已是最新版 ${TARGET:0:7}"
+    exit 0
+  fi
+  log "状态记录为 ${TARGET:0:7} 但文件不一致，强制重新同步"
+fi
 
 STAMP=$(date +%Y%m%d%H%M%S)
 STAGE=$(mktemp -d /tmp/lnmpr-update.XXXXXX)
@@ -103,6 +118,8 @@ else
 fi
 
 printf '%s\n' "$TARGET" > "$STATE_FILE"
+# 同步工作树引用，使 HEAD 与已部署内容一致，后续内容校验才准确。
+git reset -q --mixed "$TARGET" 2>/dev/null || true
 # 更新全局执行副本，使下一轮定时任务使用新版更新器。
 if [ -f "$ROOT/deploy/auto-update.sh" ]; then
   install -m 0755 "$ROOT/deploy/auto-update.sh" /usr/local/sbin/docker-ip-ssl-proxy-update
