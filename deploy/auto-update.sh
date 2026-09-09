@@ -83,7 +83,7 @@ rollback(){
 
 if [ "$SCOPE" = full ]; then
   docker compose up -d --build || { rollback; exit 1; }
-  docker compose up -d --force-recreate human-gate || { rollback; exit 1; }
+  docker compose up -d --force-recreate issuer human-gate || { rollback; exit 1; }
   sleep 8
   RUNNING=$(docker compose ps --status running --services)
   if ! grep -qx nginx <<<"$RUNNING" || ! grep -qx issuer <<<"$RUNNING" || ! grep -qx human-gate <<<"$RUNNING" || \
@@ -92,7 +92,8 @@ if [ "$SCOPE" = full ]; then
     rollback; exit 1
   fi
 else
-  docker compose up -d --build issuer || { rollback; exit 1; }
+  # 强制重建 issuer：常驻容器不重启时，新增的证书链修复逻辑不会执行。
+  docker compose up -d --build --force-recreate issuer || { rollback; exit 1; }
   sleep 5
   docker compose ps --status running --services | grep -qx issuer || { rollback; exit 1; }
   # cert-only 节点明确禁止出现 human-gate 容器。
